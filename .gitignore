@@ -1,0 +1,21 @@
+# Node / backend
+backend/node_modules/
+backend/.env
+backend/.env.*.local
+backend/npm-debug.log*
+backend/yarn-error.log*
+backend/.DS_Store
+
+# Angular / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/.env
+frontend/.env.*.local
+
+# Sistema / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.local
