@@ -1,37 +1,67 @@
 const router = require('express').Router();
 const pool = require('../db/pool');
 
-/** Pagar una multa por id (simple, sin SP) */
-router.patch('/:id/pagar', async (req, res) => {
+/**
+ * GET /api/multas/usuario/:id
+ * Lista las multas (pendientes y pagadas) de un usuario.
+ * Requiere SP: sp_listar_multas_usuario(IN p_id_usuario INT)
+ */
+router.get('/usuario/:id', async (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId)) {
+    return res.status(400).json({ ok: false, error: 'id_usuario inválido' });
+  }
+
   try {
-    const [r] = await pool.query(
-      `UPDATE multa
-       SET estado_multa='pagada', fecha_pago=NOW()
-       WHERE id_multa=? AND estado_multa='pendiente'`,
-      [req.params.id]
-    );
-    if (!r.affectedRows) {
-      return res.status(400).json({ ok:false, error:'No existe o ya estaba pagada' });
-    }
-    res.json({ ok:true, id_multa: Number(req.params.id) });
+    const [rows] = await pool.query('CALL sp_listar_multas_usuario(?)', [userId]);
+    // mysql2 con CALL retorna [[resultset], meta...]
+    const data = Array.isArray(rows) ? rows[0] : [];
+    res.json(data);
   } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
+    res.status(500).json({ ok: false, error: e.sqlMessage || e.message });
   }
 });
 
-/** Pagar TODAS las multas pendientes de un usuario (demo) */
-router.patch('/usuario/:id/pagar-todo', async (req, res) => {
+/**
+ * PATCH /api/multas/:id/pagar
+ * Paga UNA multa por id (estado_multa -> 'pagada', fecha_pago -> NOW()).
+ * Requiere SP: sp_pagar_multa(IN p_id_multa INT)
+ * Respuesta: { ok:true, id_multa, estado:'pagada' }
+ */
+router.patch('/:id/pagar', async (req, res) => {
+  const multaId = Number(req.params.id);
+  if (!Number.isInteger(multaId)) {
+    return res.status(400).json({ ok: false, error: 'id_multa inválido' });
+  }
+
   try {
-    const [r] = await pool.query(
-      `UPDATE multa m
-         JOIN prestamo p ON p.id_prestamo = m.id_prestamo
-       SET m.estado_multa='pagada', m.fecha_pago=NOW()
-       WHERE p.id_usuario=? AND m.estado_multa='pendiente'`,
-      [req.params.id]
-    );
-    res.json({ ok:true, usuario: Number(req.params.id), pagadas: r.affectedRows });
+    const [rows] = await pool.query('CALL sp_pagar_multa(?)', [multaId]);
+    const out = rows?.[0]?.[0] || { id_multa: multaId, estado: 'pagada' };
+    res.json({ ok: true, ...out });
   } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
+    // Mensajes generados con SIGNAL en el SP llegan con sqlState 45000
+    res.status(400).json({ ok: false, error: e.sqlMessage || e.message });
+  }
+});
+
+/**
+ * PATCH /api/multas/usuario/:id/pagar-todo
+ * Paga TODAS las multas pendientes de un usuario.
+ * Requiere SP: sp_pagar_multas_usuario(IN p_id_usuario INT)
+ * Respuesta: { ok:true, id_usuario, pagadas }
+ */
+router.patch('/usuario/:id/pagar-todo', async (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId)) {
+    return res.status(400).json({ ok: false, error: 'id_usuario inválido' });
+  }
+
+  try {
+    const [rows] = await pool.query('CALL sp_pagar_multas_usuario(?)', [userId]);
+    const out = rows?.[0]?.[0] || { id_usuario: userId, pagadas: 0 };
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.sqlMessage || e.message });
   }
 });
 
