@@ -78,3 +78,73 @@ BEGIN
 END$$
 
 DELIMITER ;
+
+
+-- ============================================
+-- SP: pagar UNA multa por id
+-- ============================================
+DROP PROCEDURE IF EXISTS sp_pagar_multa;
+DELIMITER $$
+CREATE PROCEDURE sp_pagar_multa(IN p_id_multa INT)
+BEGIN
+  DECLARE v_estado VARCHAR(20);
+
+  -- leer y bloquear la fila
+  SELECT estado_multa INTO v_estado
+  FROM multa
+  WHERE id_multa = p_id_multa
+  FOR UPDATE;
+
+  IF v_estado IS NULL THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='La multa no existe';
+  ELSEIF v_estado = 'pagada' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='La multa ya está pagada';
+  END IF;
+
+  UPDATE multa
+  SET estado_multa='pagada', fecha_pago=NOW()
+  WHERE id_multa = p_id_multa;
+
+  -- respuesta simple para el cliente
+  SELECT p_id_multa AS id_multa, 'pagada' AS estado;
+END$$
+DELIMITER ;
+
+-- ============================================
+-- SP: pagar TODAS las multas pendientes de un usuario
+-- Devuelve una fila con {id_usuario, pagadas}
+-- ============================================
+DROP PROCEDURE IF EXISTS sp_pagar_multas_usuario;
+DELIMITER $$
+CREATE PROCEDURE sp_pagar_multas_usuario(IN p_id_usuario INT)
+BEGIN
+  DECLARE v_pagadas INT DEFAULT 0;
+
+  START TRANSACTION;
+
+    UPDATE multa m
+    JOIN prestamo p ON p.id_prestamo = m.id_prestamo
+    SET m.estado_multa='pagada', m.fecha_pago=NOW()
+    WHERE p.id_usuario = p_id_usuario
+      AND m.estado_multa='pendiente';
+
+    SET v_pagadas = ROW_COUNT();
+
+  COMMIT;
+
+  SELECT p_id_usuario AS id_usuario, v_pagadas AS pagadas;
+END$$
+DELIMITER ;
+
+-- (opcional) SP: listar multas de un usuario (para UI)
+DROP PROCEDURE IF EXISTS sp_listar_multas_usuario;
+DELIMITER $$
+CREATE PROCEDURE sp_listar_multas_usuario(IN p_id_usuario INT)
+BEGIN
+  SELECT m.id_multa, m.id_prestamo, m.monto, m.estado_multa, m.fecha_emision, m.fecha_pago
+  FROM multa m
+  JOIN prestamo p ON p.id_prestamo = m.id_prestamo
+  WHERE p.id_usuario = p_id_usuario
+  ORDER BY m.id_multa DESC;
+END$$
+DELIMITER ;
